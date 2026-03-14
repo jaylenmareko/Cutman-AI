@@ -1,0 +1,175 @@
+Build a full-stack web application called CutmanAI for boxing coaches and fighters. The app allows users to upload a fight video or paste a YouTube link, sends that video to the TwelveLabs API for analysis, then passes the analysis results to the Claude API to generate a structured scouting report. Deploy-ready on Replit with PostgreSQL.
+
+TECH STACK
+- Frontend: React with Vite, React Router for navigation, Axios for HTTP requests
+- Backend: Node.js with Express
+- Database: Replit PostgreSQL with Drizzle ORM
+- Video Analysis: TwelveLabs API (Marengo and Pegasus engines)
+- Report Generation: Claude API using model claude-sonnet-4-5
+- Auth: Session-based authentication using express-session with bcrypt for password hashing
+- File uploads: Multer for handling video file uploads
+
+ENVIRONMENT VARIABLES NEEDED
+- TWELVELABS_API_KEY
+- ANTHROPIC_API_KEY
+- DATABASE_URL (Replit PostgreSQL connection string)
+- SESSION_SECRET
+
+PROJECT STRUCTURE
+/client — React frontend (Vite)
+/server — Express backend
+/server/db — Drizzle schema and database connection
+/server/routes — auth, upload, analysis, reports
+/shared — shared TypeScript types
+
+DATABASE SCHEMA (Drizzle ORM)
+Create three tables:
+
+users table: id (serial primary key), email (text, unique, not null), password_hash (text, not null), created_at (timestamp, default now)
+
+reports table: id (serial primary key), user_id (integer, references users.id), fighter_name (text), video_source (text — either a YouTube URL or uploaded filename), status (text — enum: pending, processing, complete, error), raw_twelvelabs_analysis (text), report_content (text — the full Claude-generated report stored as JSON string), created_at (timestamp, default now)
+
+sessions table: managed automatically via connect-pg-simple for session persistence
+
+BACKEND — EXPRESS SERVER
+
+Server entry point (server/index.js):
+- Initialize Express, configure CORS for the Vite dev server, use express-session with connect-pg-simple store, parse JSON and multipart form data with Multer
+- Mount routes at /api/auth, /api/upload, /api/analyze, /api/reports
+- Serve the React build from /client/dist in production
+
+Auth routes (/api/auth):
+- POST /register — validate email and password, hash password with bcrypt (12 rounds), insert user into database, create session, return user object without password
+- POST /login — look up user by email, compare password with bcrypt, create session on success
+- POST /logout — destroy session
+- GET /me — return current session user or 401
+
+Upload route (/api/upload):
+- POST /api/upload — requires auth middleware, accepts either a video file upload (via Multer, store in /tmp, accept mp4/mov/avi up to 500MB) or a JSON body with a youtubeUrl field
+- Validate that exactly one of these is provided
+- Create a report record in the database with status "pending" and return the report ID immediately so the frontend can poll for updates
+
+Analysis route (/api/analyze):
+- POST /api/analyze/:reportId — requires auth, verifies the report belongs to the current user, then runs the full pipeline:
+
+STEP 1 — TwelveLabs Integration:
+  - If video file: upload the file to TwelveLabs using their upload API. Create an index first if one does not exist for this user, then upload the video file to that index. Poll the TwelveLabs task endpoint every 5 seconds until the video is indexed (status becomes "ready"). This may take several minutes.
+  - If YouTube URL: use TwelveLabs' URL-based ingestion to submit the YouTube link directly. Poll until ready.
+  - Once indexed, call the TwelveLabs search and summarization endpoints to extract: movement patterns, action sequences, notable events, visual patterns throughout the video. Use the Pegasus engine for generating a detailed video summary. Store the raw analysis response.
+
+STEP 2 — Claude Report Generation:
+  - Send the TwelveLabs analysis output to the Claude API (model: claude-sonnet-4-5) with the following structured prompt:
+
+"You are CutmanAI, an expert boxing analyst. You have been given a detailed computer vision analysis of a boxing fight video. Your job is to generate a professional scouting report based ONLY on what can be visually observed from the footage. Do not speculate or invent statistics. Structure your report as a JSON object with exactly these fields:
+
+fighter_style_profile: A paragraph describing the fighter's overall style (pressure fighter, boxer, brawler, counterpuncher, or hybrid) with supporting observations.
+punch_tendencies: Which punches they favor, combinations they return to, and the situations that trigger their offense.
+defensive_habits: Their default defensive responses — clinching behavior, shell guard, shoulder roll, head movement, whether they use lateral movement or just absorb.
+behavior_under_pressure: Specific observable changes in their behavior when hurt, backed up, or under sustained attack.
+ring_movement_patterns: How they use the ring — cutting off angles, circling direction preference, rope usage, center control habits.
+setup_patterns: Observable patterns before they throw their big shots — feints, jabs used as range finders, level changes, footwork tells.
+body_shot_usage: How often they attack the body, which shots they use, and when in the fight they go downstairs.
+aggression_patterns: How their aggression level shifts across rounds — do they start slow, surge late, respond to getting hit, or maintain constant pressure.
+defensive_weaknesses: Specific observable gaps in their defense based on what the footage shows — high guard leaving body open, wide jab return, slow to recover after combinations, drops hands after throwing.
+recommended_gameplan: A concrete, tactical game plan for beating this fighter based on all of the above observations. Write this as direct coaching advice."
+
+  - Parse the JSON response from Claude
+  - Update the report record in the database: set status to "complete", store raw_twelvelabs_analysis and report_content (the Claude JSON stringified)
+
+Reports routes (/api/reports):
+- GET /api/reports — return all reports for the current user, ordered by created_at desc, return id, fighter_name, video_source, status, created_at (not the full content)
+- GET /api/reports/:id — return the full report including report_content, verify it belongs to current user
+- DELETE /api/reports/:id — delete report, verify ownership
+- PATCH /api/reports/:id/name — update fighter_name field
+
+Add a polling endpoint: GET /api/reports/:id/status — return just the current status and any error message so the frontend can poll during processing
+
+Error handling: If TwelveLabs or Claude fails, set report status to "error" and store an error_message. Never leave a report stuck in "processing" without updating status.
+
+FRONTEND — REACT (VITE)
+
+Design system — implement these CSS custom properties globally:
+- --bg-primary: #0a0a0a
+- --bg-secondary: #111111
+- --bg-card: #1a1a1a
+- --accent-red: #8B0000
+- --accent-red-bright: #cc0000
+- --text-primary: #ffffff
+- --text-secondary: #aaaaaa
+- --border-color: #2a2a2a
+- Font: Inter from Google Fonts, fallback to system-ui
+
+Global styles: dark background everywhere, no white backgrounds, red used for primary buttons and active states only, minimal borders, lots of breathing room.
+
+Pages and components:
+
+1. Landing page (public, route: /):
+- Full-screen dark hero with the CutmanAI logo in blood red
+- Tagline: "AI-powered scouting reports for boxing coaches and fighters"
+- Two buttons: Sign Up and Log In
+- Brief three-column feature section explaining what the app does
+- No navbar clutter — clean and direct
+
+2. Auth pages (/login and /register):
+- Centered card on dark background
+- Email and password fields, styled with dark inputs and red focus rings
+- Error messages displayed inline
+- Link to switch between login and register
+- On success, redirect to /dashboard
+
+3. Dashboard (protected route: /dashboard):
+- Top navbar: CutmanAI logo left, user email right with a logout button
+- Main content: "New Scouting Report" button prominently placed (blood red)
+- Below it: a list of the user's saved reports as cards showing fighter name, date, status badge (color-coded: yellow for processing, green for complete, red for error)
+- Each card links to the full report view
+- Empty state message if no reports yet
+
+4. New Report modal or page (/new):
+- Fighter name input (text field — who is being scouted)
+- Two tabs: "Upload Video" and "YouTube Link"
+- Upload tab: drag-and-drop file zone that accepts mp4/mov/avi, shows file name and size after selection, file size warning if over 500MB
+- YouTube tab: text input for the YouTube URL
+- Submit button labeled "Analyze Fighter"
+- On submit: POST to upload endpoint, then immediately POST to analyze endpoint, then redirect to the report status page with the new report ID
+
+5. Report status page (/reports/:id/processing):
+- Show while status is "pending" or "processing"
+- Display a pulsing animation or spinner with text: "CutmanAI is analyzing the footage..."
+- Show a progress message that updates: "Uploading to TwelveLabs...", "Indexing video...", "Generating report..."
+- Poll GET /api/reports/:id/status every 4 seconds
+- When status becomes "complete", automatically redirect to the report view page
+- If status is "error", show the error message with a button to try again
+
+6. Report view page (/reports/:id):
+- Page header: fighter name (editable inline with a pencil icon), date analyzed
+- Render each section of the report as a distinct card with a red left border accent:
+  - Fighter Style Profile
+  - Punch Tendencies
+  - Defensive Habits
+  - Behavior Under Pressure
+  - Ring Movement Patterns
+  - Setup Patterns
+  - Body Shot Usage
+  - Aggression Patterns
+  - Defensive Weaknesses
+  - Recommended Game Plan (this section should be visually emphasized — slightly larger card, brighter border)
+- Each card has a bold section title and the paragraph content below it
+- "Back to Dashboard" button top left
+- "Delete Report" button top right (with confirmation dialog before deleting)
+
+AUTH MIDDLEWARE
+Create a requireAuth middleware function that checks req.session.userId and returns 401 if not present. Apply this to all /api/upload, /api/analyze, and /api/reports routes.
+
+REPLIT CONFIGURATION
+- Create a .replit file that runs the Express server in production (node server/index.js) and uses the Vite dev server during development
+- The Express server should serve the Vite build output (client/dist) as static files in production
+- Configure Vite to proxy /api requests to the Express server during development so there are no CORS issues
+- Add a replit.nix or package.json scripts section with: dev (runs both Vite and Express concurrently), build (vite build), start (node server/index.js)
+
+IMPORTANT IMPLEMENTATION NOTES
+- The TwelveLabs video indexing step is slow (can take 2 to 10 minutes depending on video length). The backend must handle this asynchronously. After the initial upload request returns the report ID, the actual analysis pipeline should run in the background. Do not make the HTTP request wait for the full pipeline.
+- Use async/await throughout and wrap all external API calls in try/catch blocks
+- Store all sensitive keys in Replit Secrets, never hardcode them
+- The Claude API call should set max_tokens to 4000 to ensure the full report generates without being cut off
+- When parsing Claude's JSON response, handle cases where it wraps the JSON in markdown code fences — strip those before parsing
+- Video files uploaded to /tmp should be deleted after TwelveLabs ingestion is complete to avoid filling disk
