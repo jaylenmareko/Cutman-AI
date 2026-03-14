@@ -1,0 +1,15 @@
+packages:
+  "framer-motion": "Animations and page transitions for a premium feel"
+  "react-dropzone": "Drag and drop file uploads for the video analysis"
+  "date-fns": "Formatting dates in the dashboard and reports"
+  "@hookform/resolvers": "Zod resolver for react-hook-form"
+  "react-hook-form": "Form state management"
+
+images:
+  - path: "artifacts/cutman-ai/public/images/hero-bg.png"
+    description: "Dark, aggressive, high-contrast boxing gym environment with a heavy bag and dramatic red lighting. Gritty, professional, cinematic."
+    aspect_ratio: "16:9"
+
+notes:
+  - "Assuming @workspace/api-client-react provides the necessary TanStack query hooks."
+  - "Using raw fetch for the upload endpoint due to multipart/form-data requirements that can conflict with generated OpenAPI stringification."

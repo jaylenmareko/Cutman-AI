@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "CutmanAI"
+version = "1.0.0"
+id = "artifacts/cutman-ai"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+localPort = 19640
+name = "web"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/cutman-ai run dev"
+
+[services.env]
+PORT = "19640"
+BASE_PATH = "/"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/cutman-ai", "run", "build"]
+publicDir = "artifacts/cutman-ai/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"

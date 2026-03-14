@@ -1,15 +1,22 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: CutmanAI API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: reports
+    description: Scouting report operations
+  - name: upload
+    description: Video upload operations
+  - name: analyze
+    description: Video analysis operations
 paths:
   /healthz:
     get:
@@ -24,6 +31,326 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthCredentials"
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthCredentials"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /upload:
+    post:
+      operationId: uploadVideo
+      tags: [upload]
+      summary: Upload a video or submit a YouTube URL
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                video:
+                  type: string
+                  format: binary
+                youtubeUrl:
+                  type: string
+                fighterName:
+                  type: string
+          application/json:
+            schema:
+              type: object
+              properties:
+                youtubeUrl:
+                  type: string
+                fighterName:
+                  type: string
+      responses:
+        "201":
+          description: Report created, analysis started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportSummary"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /analyze/{reportId}:
+    post:
+      operationId: analyzeReport
+      tags: [analyze]
+      summary: Trigger analysis for a report
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Analysis started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Report not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /reports:
+    get:
+      operationId: getReports
+      tags: [reports]
+      summary: Get all reports for the current user
+      responses:
+        "200":
+          description: List of reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReportSummary"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /reports/{id}:
+    get:
+      operationId: getReport
+      tags: [reports]
+      summary: Get a single report with full content
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Full report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportFull"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Report not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteReport
+      tags: [reports]
+      summary: Delete a report
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Report deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Report not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /reports/{id}/name:
+    patch:
+      operationId: updateReportName
+      tags: [reports]
+      summary: Update fighter name for a report
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fighterName]
+              properties:
+                fighterName:
+                  type: string
+      responses:
+        "200":
+          description: Name updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Report not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /reports/{id}/status:
+    get:
+      operationId: getReportStatus
+      tags: [reports]
+      summary: Get the current status of a report (for polling)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Report status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportStatus"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Report not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +361,110 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
+
+    AuthCredentials:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+
+    UserResponse:
+      type: object
+      required:
+        - id
+        - email
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+
+    ReportSummary:
+      type: object
+      required:
+        - id
+        - status
+        - createdAt
+      properties:
+        id:
+          type: integer
+        fighterName:
+          type: string
+          nullable: true
+        videoSource:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, processing, complete, error]
+        createdAt:
+          type: string
+          format: date-time
+        errorMessage:
+          type: string
+          nullable: true
+
+    ReportFull:
+      type: object
+      required:
+        - id
+        - status
+        - createdAt
+      properties:
+        id:
+          type: integer
+        fighterName:
+          type: string
+          nullable: true
+        videoSource:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, processing, complete, error]
+        createdAt:
+          type: string
+          format: date-time
+        reportContent:
+          type: string
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+
+    ReportStatus:
+      type: object
+      required:
+        - id
+        - status
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [pending, processing, complete, error]
+        errorMessage:
+          type: string
+          nullable: true
