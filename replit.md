@@ -1,8 +1,8 @@
-# Workspace
+# CutmanAI
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+AI-powered boxing scouting report application for coaches and fighters. Upload a fight video or paste a YouTube link, the app uses TwelveLabs for video analysis and Claude AI to generate a structured professional scouting report.
 
 ## Stack
 
@@ -10,87 +10,125 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Node.js version**: 24
 - **Package manager**: pnpm
 - **TypeScript version**: 5.9
-- **API framework**: Express 5
+- **Frontend**: React + Vite (artifacts/cutman-ai)
+- **Backend**: Express 5 (artifacts/api-server)
 - **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
+- **Auth**: Session-based (express-session + connect-pg-simple + bcrypt)
+- **File uploads**: Multer (mp4/mov/avi up to 500MB, stored in /tmp)
+- **Video analysis**: TwelveLabs API v1.3 (Marengo + Pegasus engines)
+- **Report generation**: Claude API (claude-sonnet-4-5)
+- **Validation**: Zod (zod/v4), drizzle-zod
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 
 ## Structure
 
 ```text
-artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
-├── lib/                    # Shared libraries
-│   ├── api-spec/           # OpenAPI spec + Orval codegen config
+cutman-ai/
+├── artifacts/
+│   ├── api-server/         # Express API server (port 8080 → /api)
+│   │   └── src/
+│   │       ├── routes/     # auth, upload, analyze, reports, health
+│   │       ├── services/   # twelvelabs.ts, claude.ts
+│   │       └── middlewares/# auth.ts (requireAuth)
+│   └── cutman-ai/          # React + Vite frontend (root /)
+│       └── src/
+│           ├── pages/      # Landing, Login, Register, Dashboard, NewReport, ReportProcessing, ReportView
+│           ├── components/ # Navbar, ProtectedRoute, UI components
+│           └── index.css   # Dark boxing theme (blood red accent)
+├── lib/
+│   ├── api-spec/           # OpenAPI 3.1 spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
 │   ├── api-zod/            # Generated Zod schemas from OpenAPI
 │   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
-├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
+│       └── src/schema/
+│           ├── users.ts    # users table
+│           └── reports.ts  # reports table
+├── scripts/                # Utility scripts
+└── pnpm-workspace.yaml
 ```
 
-## TypeScript & Composite Projects
+## Environment Variables Required
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
+- `TWELVELABS_API_KEY` — TwelveLabs video analysis API key
+- `ANTHROPIC_API_KEY` — Anthropic Claude API key
+- `DATABASE_URL` — PostgreSQL connection string (auto-provisioned by Replit)
+- `SESSION_SECRET` — Express session secret
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+## Database Schema
 
-## Root Scripts
+### users
+- id (serial PK), email (unique), password_hash, created_at
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
+### reports
+- id (serial PK), user_id (FK → users), fighter_name, video_source, status (pending/processing/complete/error), raw_twelvelabs_analysis, report_content (Claude JSON), error_message, created_at
 
-## Packages
+### session
+- Auto-created by connect-pg-simple for session persistence
 
-### `artifacts/api-server` (`@workspace/api-server`)
+## API Routes
 
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | /api/auth/register | — | Register user |
+| POST | /api/auth/login | — | Login |
+| POST | /api/auth/logout | ✓ | Logout |
+| GET | /api/auth/me | — | Get current user |
+| POST | /api/upload | ✓ | Upload video file or YouTube URL |
+| POST | /api/analyze/:reportId | ✓ | Start analysis pipeline (async) |
+| GET | /api/reports | ✓ | List user's reports |
+| GET | /api/reports/:id | ✓ | Get full report |
+| DELETE | /api/reports/:id | ✓ | Delete report |
+| PATCH | /api/reports/:id/name | ✓ | Update fighter name |
+| GET | /api/reports/:id/status | ✓ | Poll analysis status |
 
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+## Frontend Routes
 
-### `lib/db` (`@workspace/db`)
+- `/` — Landing page (public)
+- `/login` — Login (public)
+- `/register` — Register (public)
+- `/dashboard` — Dashboard with report list (protected)
+- `/new` — New report creation (protected)
+- `/reports/:id/processing` — Analysis in progress, polls status (protected)
+- `/reports/:id` — Full report view (protected)
 
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
+## Analysis Pipeline
 
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
+1. POST /api/upload → creates report (status: pending), returns report ID immediately
+2. POST /api/analyze/:id → fires off background pipeline, returns immediately:
+   - Get or create TwelveLabs index per user
+   - Upload video file (multipart) or YouTube URL
+   - Poll TwelveLabs task until status = "ready" (up to 20 min)
+   - Call TwelveLabs `/generate` (Pegasus summary) + `/search` (Marengo)
+   - Send analysis to Claude claude-sonnet-4-5 → structured JSON scouting report
+   - Update report status to "complete" or "error"
+3. Frontend polls GET /api/reports/:id/status every 4 seconds
 
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
+## Scouting Report Fields (from Claude)
 
-### `lib/api-spec` (`@workspace/api-spec`)
+- fighter_style_profile
+- punch_tendencies
+- defensive_habits
+- behavior_under_pressure
+- ring_movement_patterns
+- setup_patterns
+- body_shot_usage
+- aggression_patterns
+- defensive_weaknesses
+- recommended_gameplan
 
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
+## Development
 
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
+```bash
+# Start API server
+pnpm --filter @workspace/api-server run dev
 
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
+# Start frontend
+pnpm --filter @workspace/cutman-ai run dev
 
-### `lib/api-zod` (`@workspace/api-zod`)
+# Push DB schema
+pnpm --filter @workspace/db run push
 
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
-
-### `lib/api-client-react` (`@workspace/api-client-react`)
-
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+# Run codegen (after changing OpenAPI spec)
+pnpm --filter @workspace/api-spec run codegen
+```

@@ -37,7 +37,7 @@ async function runAnalysisPipeline(reportId: number, userId: number) {
       } catch (_) {}
     }
 
-    const rawAnalysis = await analyzeVideo(videoId);
+    const rawAnalysis = await analyzeVideo(indexId, videoId);
     const reportContent = await generateScoutingReport(rawAnalysis);
 
     await db
