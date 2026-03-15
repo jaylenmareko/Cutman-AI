@@ -98,16 +98,25 @@ export async function uploadVideoUrl(indexId: string, videoUrl: string): Promise
 }
 
 export async function analyzeVideo(indexId: string, indexName: string, videoId: string): Promise<string> {
-  const summary = await (client as any).summarize(videoId, "summary", {
-    prompt: "Describe all boxing technique, movement, footwork, offensive combinations, defensive habits, aggression patterns, and ring generalship observed in this fight video.",
+  const summary = await tlFetch("/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      video_id: videoId,
+      prompt: "Describe all boxing technique, movement, footwork, offensive combinations, defensive habits, aggression patterns, and ring generalship observed in this fight video.",
+    }),
   });
 
-  const search = await client.search.query({
-    indexId,
-    queryText: "boxing punches jab cross hook uppercut footwork head movement defense offense combinations aggression",
-    options: ["visual", "audio"],
-    pageLimit: 20,
-  } as any);
+  const search = await tlFetch("/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      index_id: indexId,
+      query_text: "boxing punches jab cross hook uppercut footwork head movement defense offense combinations aggression",
+      search_options: ["visual", "audio"],
+      page_limit: 20,
+    }),
+  });
 
   return JSON.stringify({ summary, search });
 }
