@@ -1,139 +1,64 @@
+import { TwelveLabs } from "twelvelabs-js";
 import fs from "fs";
-import path from "path";
 
-const BASE_URL = "https://api.twelvelabs.io/v1.3";
-const API_KEY = process.env.TWELVELABS_API_KEY!;
-
-async function tlFetch(path: string, options: RequestInit = {}) {
-  const url = `${BASE_URL}${path}`;
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      "x-api-key": API_KEY,
-      ...(options.headers || {}),
-    },
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`TwelveLabs API error ${res.status} [${path}]: ${body}`);
-  }
-  return res.json();
-}
+const client = new TwelveLabs({ apiKey: process.env.TWELVELABS_API_KEY! });
 
 export async function getOrCreateIndex(userId: number): Promise<{ id: string; name: string }> {
   const indexName = `cutman-ai-user-${userId}`;
 
-  const resp = await tlFetch("/indexes?page=1&page_limit=50");
-  const existing = resp.data?.find(
-    (idx: any) => (idx.index_name ?? idx.name) === indexName
-  );
-  if (existing) return { id: existing._id, name: indexName };
+  const resp = await client.indexes.list() as any;
+  const list: any[] = resp.data ?? resp.items ?? (Array.isArray(resp) ? resp : []);
+  const existing = list.find((idx: any) => (idx.indexName ?? idx.name) === indexName);
+  if (existing) return { id: existing.id ?? existing._id, name: indexName };
 
-  const created = await tlFetch("/indexes", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      index_name: indexName,
-      models: [
-        {
-          model_name: "marengo2.7",
-          model_options: ["visual", "audio"],
-        },
-      ],
-    }),
-  });
-  return { id: created._id, name: indexName };
-}
-
-async function pollTask(taskId: string, maxMinutes = 20): Promise<void> {
-  const deadline = Date.now() + maxMinutes * 60 * 1000;
-  while (Date.now() < deadline) {
-    const task = await tlFetch(`/tasks/${taskId}`);
-    const status: string = task.status;
-    if (status === "ready") return;
-    if (status === "failed") {
-      throw new Error(`TwelveLabs indexing failed: ${task.error?.message ?? "unknown reason"}`);
+  try {
+    const created = await client.indexes.create({
+      indexName,
+      models: [{ modelName: "marengo2.7", modelOptions: ["visual", "audio"] }],
+    }) as any;
+    return { id: created.id ?? created._id, name: indexName };
+  } catch (err: any) {
+    if (err?.message?.includes("already exists") || err?.statusCode === 409 || err?.status === 409) {
+      const resp2 = await client.indexes.list() as any;
+      const list2: any[] = resp2.data ?? resp2.items ?? (Array.isArray(resp2) ? resp2 : []);
+      const found = list2.find((idx: any) => (idx.indexName ?? idx.name) === indexName);
+      if (found) return { id: found.id ?? found._id, name: indexName };
     }
-    await new Promise((r) => setTimeout(r, 5000));
+    throw err;
   }
-  throw new Error("TwelveLabs indexing timed out after 20 minutes");
 }
 
 export async function uploadVideoFile(indexId: string, filePath: string): Promise<string> {
-  // Use native FormData + Blob so fetch sets Content-Type boundary automatically
-  const fileBuffer = fs.readFileSync(filePath);
-  const blob = new Blob([fileBuffer]);
-  const form = new globalThis.FormData();
-  form.append("index_id", indexId);
-  form.append("video_file", blob, path.basename(filePath));
-
-  const res = await fetch(`${BASE_URL}/tasks`, {
-    method: "POST",
-    headers: { "x-api-key": API_KEY }, // No Content-Type — fetch sets it with correct boundary
-    body: form,
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`TwelveLabs API error ${res.status} [/tasks]: ${body}`);
-  }
-
-  const data = await res.json();
-  const taskId = data._id;
-  await pollTask(taskId);
-  const taskInfo = await tlFetch(`/tasks/${taskId}`);
-  return taskInfo.video_id;
+  const task = await client.tasks.create({
+    indexId,
+    file: fs.createReadStream(filePath) as any,
+  }) as any;
+  await task.waitForDone(5000);
+  if (task.status === "failed") throw new Error("TwelveLabs indexing failed");
+  return task.videoId;
 }
 
 export async function uploadVideoUrl(indexId: string, videoUrl: string): Promise<string> {
   if (videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be")) {
     throw new Error("YouTube URLs are not supported. Please upload a video file directly.");
   }
-
-  const form = new globalThis.FormData();
-  form.append("index_id", indexId);
-  form.append("video_url", videoUrl);
-
-  const res = await fetch(`${BASE_URL}/tasks`, {
-    method: "POST",
-    headers: { "x-api-key": API_KEY },
-    body: form,
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`TwelveLabs API error ${res.status} [/tasks]: ${body}`);
-  }
-
-  const data = await res.json();
-  const taskId = data._id;
-  await pollTask(taskId);
-  const taskInfo = await tlFetch(`/tasks/${taskId}`);
-  return taskInfo.video_id;
+  const task = await client.tasks.create({ indexId, url: videoUrl } as any) as any;
+  await task.waitForDone(5000);
+  if (task.status === "failed") throw new Error("TwelveLabs indexing failed");
+  return task.videoId;
 }
 
 export async function analyzeVideo(indexId: string, indexName: string, videoId: string): Promise<string> {
-  const generateResp = await tlFetch("/analyze", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      video_id: videoId,
-      prompt:
-        "Provide a comprehensive, detailed description of all boxing technique, movement, footwork, offensive combinations, defensive habits, aggression patterns, and ring generalship observed throughout this fight video.",
-    }),
+  const summary = await (client as any).summarize(videoId, "summary", {
+    prompt: "Describe all boxing technique, movement, footwork, offensive combinations, defensive habits, aggression patterns, and ring generalship observed in this fight video.",
   });
 
-  const searchResp = await tlFetch("/search", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      index_id: indexId,
-      query_text:
-        "boxing punches jab cross hook uppercut footwork head movement defense offense combinations aggression",
-      search_options: ["visual", "audio"],
-      page_limit: 20,
-    }),
-  });
+  const search = await client.search.query({
+    indexId,
+    queryText: "boxing punches jab cross hook uppercut footwork head movement defense offense combinations aggression",
+    options: ["visual", "audio"],
+    pageLimit: 20,
+  } as any);
 
-  return JSON.stringify({ summary: generateResp, search: searchResp });
+  return JSON.stringify({ summary, search });
 }
