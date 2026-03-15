@@ -87,10 +87,10 @@ export async function uploadVideoFile(indexId: string, filePath: string): Promis
 }
 
 export async function uploadYouTubeUrl(indexId: string, youtubeUrl: string): Promise<string> {
-  const data = await tlFetch("/tasks/external-provider", {
+  const data = await tlFetch("/tasks", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ index_id: indexId, url: youtubeUrl }),
+    body: JSON.stringify({ index_id: indexId, video_url: youtubeUrl }),
   });
   const taskId = data._id;
   await pollTask(taskId);
