@@ -20,22 +20,49 @@ async function tlFetch(path: string, options: RequestInit = {}) {
 export async function getOrCreateIndex(userId: number): Promise<{ id: string; name: string }> {
   const indexName = `cutman-ai-user-${userId}`;
 
-  // Use raw HTTP for listing — reliable response format
+  // List existing indexes
   const resp = await tlFetch("/indexes?page=1&page_limit=50");
-  const list: any[] = resp.data ?? [];
-  const existing = list.find((idx: any) => (idx.index_name ?? idx.name ?? idx.indexName) === indexName);
-  if (existing) return { id: existing._id ?? existing.id, name: indexName };
+  console.log("[TL] indexes list raw:", JSON.stringify(resp).slice(0, 500));
+  const list: any[] = Array.isArray(resp) ? resp : (resp.data ?? resp.items ?? resp.indexes ?? []);
+  console.log("[TL] list length:", list.length, "fields:", list[0] ? Object.keys(list[0]) : []);
+  const existing = list.find((idx: any) =>
+    [idx.index_name, idx.name, idx.indexName].includes(indexName)
+  );
+  if (existing) {
+    const id = existing._id ?? existing.id;
+    console.log("[TL] found existing index:", id);
+    return { id, name: indexName };
+  }
 
-  // Create via raw HTTP
-  const created = await tlFetch("/indexes", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      index_name: indexName,
-      models: [{ model_name: "marengo2.7", model_options: ["visual", "audio"] }],
-    }),
-  });
-  return { id: created._id ?? created.id, name: indexName };
+  // Create new index
+  try {
+    const created = await tlFetch("/indexes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        index_name: indexName,
+        models: [{ model_name: "marengo2.7", model_options: ["visual", "audio"] }],
+      }),
+    });
+    const id = created._id ?? created.id;
+    console.log("[TL] created new index:", id);
+    return { id, name: indexName };
+  } catch (err: any) {
+    // 409 means it exists but list didn't return it — fetch all pages
+    if (err?.message?.includes("409") || err?.message?.includes("already exists")) {
+      console.log("[TL] 409 hit, fetching page 2...");
+      for (let page = 1; page <= 5; page++) {
+        const r = await tlFetch(`/indexes?page=${page}&page_limit=50`);
+        const items: any[] = Array.isArray(r) ? r : (r.data ?? []);
+        const found = items.find((idx: any) =>
+          [idx.index_name, idx.name, idx.indexName].includes(indexName)
+        );
+        if (found) return { id: found._id ?? found.id, name: indexName };
+        if (items.length < 50) break;
+      }
+    }
+    throw err;
+  }
 }
 
 export async function uploadVideoFile(indexId: string, filePath: string): Promise<string> {
