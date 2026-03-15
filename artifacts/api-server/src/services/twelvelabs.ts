@@ -86,10 +86,15 @@ export async function uploadVideoFile(indexId: string, filePath: string): Promis
   return taskInfo.video_id;
 }
 
-export async function uploadYouTubeUrl(indexId: string, youtubeUrl: string): Promise<string> {
+export async function uploadYouTubeUrl(indexId: string, videoUrl: string): Promise<string> {
+  const isYouTube = videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be");
+  if (isYouTube) {
+    throw new Error("YouTube URLs are not supported. Please upload a direct video file or provide a direct video URL (e.g. mp4 link).");
+  }
+
   const form = new FormData();
   form.append("index_id", indexId);
-  form.append("video_url", youtubeUrl);
+  form.append("video_url", videoUrl);
 
   const res = await fetch(`${BASE_URL}/tasks`, {
     method: "POST",
