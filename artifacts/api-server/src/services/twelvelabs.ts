@@ -106,6 +106,7 @@ export async function analyzeVideo(indexId: string, videoId: string): Promise<st
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      index_id: indexId,
       video_id: videoId,
       type: "summary",
       prompt:
