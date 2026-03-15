@@ -2,32 +2,40 @@ import { TwelveLabs } from "twelvelabs-js";
 import fs from "fs";
 
 const client = new TwelveLabs({ apiKey: process.env.TWELVELABS_API_KEY! });
+const BASE_URL = "https://api.twelvelabs.io/v1.3";
+const API_KEY = process.env.TWELVELABS_API_KEY!;
 
-async function findIndexByName(indexName: string): Promise<string | null> {
-  for await (const idx of client.indexes.list() as any) {
-    const name = idx.indexName ?? idx.name ?? "";
-    if (name === indexName) return idx.id ?? idx._id;
+async function tlFetch(path: string, options: RequestInit = {}) {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers: { "x-api-key": API_KEY, ...(options.headers || {}) },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`TwelveLabs API error ${res.status} [${path}]: ${body}`);
   }
-  return null;
+  return res.json();
 }
 
 export async function getOrCreateIndex(userId: number): Promise<{ id: string; name: string }> {
   const indexName = `cutman-ai-user-${userId}`;
 
-  try {
-    const created = await client.indexes.create({
-      indexName,
-      models: [{ modelName: "marengo2.7", modelOptions: ["visual", "audio"] }],
-    }) as any;
-    return { id: created.id ?? created._id, name: indexName };
-  } catch (err: any) {
-    const is409 = err?.message?.includes("already exists") || err?.statusCode === 409 || err?.status === 409;
-    if (is409) {
-      const id = await findIndexByName(indexName);
-      if (id) return { id, name: indexName };
-    }
-    throw err;
-  }
+  // Use raw HTTP for listing — reliable response format
+  const resp = await tlFetch("/indexes?page=1&page_limit=50");
+  const list: any[] = resp.data ?? [];
+  const existing = list.find((idx: any) => (idx.index_name ?? idx.name ?? idx.indexName) === indexName);
+  if (existing) return { id: existing._id ?? existing.id, name: indexName };
+
+  // Create via raw HTTP
+  const created = await tlFetch("/indexes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      index_name: indexName,
+      models: [{ model_name: "marengo2.7", model_options: ["visual", "audio"] }],
+    }),
+  });
+  return { id: created._id ?? created.id, name: indexName };
 }
 
 export async function uploadVideoFile(indexId: string, filePath: string): Promise<string> {
