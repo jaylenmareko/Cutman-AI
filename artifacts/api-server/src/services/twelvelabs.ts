@@ -24,7 +24,9 @@ export async function getOrCreateIndex(userId: number): Promise<{ id: string; na
   const indexName = `cutman-ai-user-${userId}`;
 
   const resp = await tlFetch("/indexes?page=1&page_limit=50");
-  const existing = resp.data?.find((idx: any) => idx.name === indexName);
+  const existing = resp.data?.find(
+    (idx: any) => (idx.index_name ?? idx.name) === indexName
+  );
   if (existing) return { id: existing._id, name: indexName };
 
   const created = await tlFetch("/indexes", {
@@ -34,12 +36,12 @@ export async function getOrCreateIndex(userId: number): Promise<{ id: string; na
       index_name: indexName,
       models: [
         {
-          name: "marengo2.7",
-          options: ["visual", "conversation", "text_in_video", "logo"],
+          model_name: "marengo2.7",
+          model_options: ["visual", "conversation", "text_in_video", "logo"],
         },
         {
-          name: "pegasus1.2",
-          options: ["visual", "conversation"],
+          model_name: "pegasus1.2",
+          model_options: ["visual", "conversation"],
         },
       ],
     }),
@@ -101,15 +103,12 @@ export async function uploadYouTubeUrl(indexId: string, youtubeUrl: string): Pro
 }
 
 export async function analyzeVideo(indexId: string, indexName: string, videoId: string): Promise<string> {
-  // Generate a full summary using Pegasus (v1.3: /generate endpoint)
-  const generateResp = await tlFetch("/generate", {
+  // Generate a full summary using Pegasus (v1.3: /analyze endpoint)
+  const generateResp = await tlFetch("/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      index_id: indexId,
-      index_name: indexName,
       video_id: videoId,
-      type: "summary",
       prompt:
         "Provide a comprehensive, detailed description of all boxing technique, movement, footwork, offensive combinations, defensive habits, aggression patterns, and ring generalship observed throughout this fight video.",
     }),
@@ -123,7 +122,7 @@ export async function analyzeVideo(indexId: string, indexName: string, videoId: 
       index_id: indexId,
       query_text:
         "boxing punches jab cross hook uppercut footwork head movement defense offense combinations aggression",
-      options: ["visual", "conversation"],
+      search_options: ["visual", "audio"],
       page_limit: 20,
     }),
   });
