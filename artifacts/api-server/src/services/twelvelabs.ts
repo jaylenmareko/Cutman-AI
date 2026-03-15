@@ -1,5 +1,5 @@
 import fs from "fs";
-import FormData from "form-data";
+import path from "path";
 
 const BASE_URL = "https://api.twelvelabs.io/v1.3";
 const API_KEY = process.env.TWELVELABS_API_KEY!;
@@ -60,49 +60,44 @@ async function pollTask(taskId: string, maxMinutes = 20): Promise<void> {
 }
 
 export async function uploadVideoFile(indexId: string, filePath: string): Promise<string> {
-  const form = new FormData();
+  // Use native FormData + Blob so fetch sets Content-Type boundary automatically
+  const fileBuffer = fs.readFileSync(filePath);
+  const blob = new Blob([fileBuffer]);
+  const form = new globalThis.FormData();
   form.append("index_id", indexId);
-  form.append("video_file", fs.createReadStream(filePath));
+  form.append("video_file", blob, path.basename(filePath));
 
   const res = await fetch(`${BASE_URL}/tasks`, {
     method: "POST",
-    headers: {
-      "x-api-key": API_KEY,
-      ...form.getHeaders(),
-    },
-    body: form as any,
+    headers: { "x-api-key": API_KEY }, // No Content-Type — fetch sets it with correct boundary
+    body: form,
   });
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`TwelveLabs upload error ${res.status}: ${body}`);
+    throw new Error(`TwelveLabs API error ${res.status} [/tasks]: ${body}`);
   }
 
   const data = await res.json();
   const taskId = data._id;
   await pollTask(taskId);
-
   const taskInfo = await tlFetch(`/tasks/${taskId}`);
   return taskInfo.video_id;
 }
 
-export async function uploadYouTubeUrl(indexId: string, videoUrl: string): Promise<string> {
-  const isYouTube = videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be");
-  if (isYouTube) {
-    throw new Error("YouTube URLs are not supported. Please upload a direct video file or provide a direct video URL (e.g. mp4 link).");
+export async function uploadVideoUrl(indexId: string, videoUrl: string): Promise<string> {
+  if (videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be")) {
+    throw new Error("YouTube URLs are not supported. Please upload a video file directly.");
   }
 
-  const form = new FormData();
+  const form = new globalThis.FormData();
   form.append("index_id", indexId);
   form.append("video_url", videoUrl);
 
   const res = await fetch(`${BASE_URL}/tasks`, {
     method: "POST",
-    headers: {
-      "x-api-key": API_KEY,
-      ...form.getHeaders(),
-    },
-    body: form as any,
+    headers: { "x-api-key": API_KEY },
+    body: form,
   });
 
   if (!res.ok) {
@@ -118,7 +113,6 @@ export async function uploadYouTubeUrl(indexId: string, videoUrl: string): Promi
 }
 
 export async function analyzeVideo(indexId: string, indexName: string, videoId: string): Promise<string> {
-  // Generate a full summary using Pegasus (v1.3: /analyze endpoint)
   const generateResp = await tlFetch("/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -129,7 +123,6 @@ export async function analyzeVideo(indexId: string, indexName: string, videoId: 
     }),
   });
 
-  // Search for specific boxing patterns using Marengo
   const searchResp = await tlFetch("/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -142,8 +135,5 @@ export async function analyzeVideo(indexId: string, indexName: string, videoId: 
     }),
   });
 
-  return JSON.stringify({
-    summary: generateResp,
-    search: searchResp,
-  });
+  return JSON.stringify({ summary: generateResp, search: searchResp });
 }

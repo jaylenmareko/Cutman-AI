@@ -4,7 +4,7 @@ import fs from "fs";
 import { db, reportsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth.js";
-import { getOrCreateIndex, uploadVideoFile, uploadYouTubeUrl, analyzeVideo } from "../services/twelvelabs.js";
+import { getOrCreateIndex, uploadVideoFile, uploadVideoUrl, analyzeVideo } from "../services/twelvelabs.js";
 import { generateScoutingReport } from "../services/claude.js";
 
 const router = Router();
@@ -28,7 +28,7 @@ async function runAnalysisPipeline(reportId: number, userId: number) {
 
     let videoId: string;
     if (isYouTube) {
-      videoId = await uploadYouTubeUrl(indexId, videoSource);
+      videoId = await uploadVideoUrl(indexId, videoSource);
     } else {
       const filePath = path.join("/tmp", videoSource);
       videoId = await uploadVideoFile(indexId, filePath);
