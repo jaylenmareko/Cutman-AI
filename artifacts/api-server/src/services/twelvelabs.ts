@@ -15,7 +15,7 @@ async function tlFetch(path: string, options: RequestInit = {}) {
   });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`TwelveLabs API error ${res.status}: ${body}`);
+    throw new Error(`TwelveLabs API error ${res.status} [${path}]: ${body}`);
   }
   return res.json();
 }
