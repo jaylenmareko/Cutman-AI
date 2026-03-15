@@ -41,7 +41,7 @@ export async function getOrCreateIndex(userId: number): Promise<{ id: string; na
 export async function uploadVideoFile(indexId: string, filePath: string): Promise<string> {
   const task = await client.tasks.create({
     indexId,
-    file: fs.createReadStream(filePath) as any,
+    videoFile: fs.createReadStream(filePath) as any,
   }) as any;
   await task.waitForDone(5000);
   if (task.status === "failed") throw new Error("TwelveLabs indexing failed");
