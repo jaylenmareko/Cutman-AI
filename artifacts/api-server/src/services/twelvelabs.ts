@@ -3,13 +3,16 @@ import fs from "fs";
 
 const client = new TwelveLabs({ apiKey: process.env.TWELVELABS_API_KEY! });
 
+async function findIndexByName(indexName: string): Promise<string | null> {
+  for await (const idx of client.indexes.list() as any) {
+    const name = idx.indexName ?? idx.name ?? "";
+    if (name === indexName) return idx.id ?? idx._id;
+  }
+  return null;
+}
+
 export async function getOrCreateIndex(userId: number): Promise<{ id: string; name: string }> {
   const indexName = `cutman-ai-user-${userId}`;
-
-  const resp = await client.indexes.list() as any;
-  const list: any[] = resp.data ?? resp.items ?? (Array.isArray(resp) ? resp : []);
-  const existing = list.find((idx: any) => (idx.indexName ?? idx.name) === indexName);
-  if (existing) return { id: existing.id ?? existing._id, name: indexName };
 
   try {
     const created = await client.indexes.create({
@@ -18,11 +21,10 @@ export async function getOrCreateIndex(userId: number): Promise<{ id: string; na
     }) as any;
     return { id: created.id ?? created._id, name: indexName };
   } catch (err: any) {
-    if (err?.message?.includes("already exists") || err?.statusCode === 409 || err?.status === 409) {
-      const resp2 = await client.indexes.list() as any;
-      const list2: any[] = resp2.data ?? resp2.items ?? (Array.isArray(resp2) ? resp2 : []);
-      const found = list2.find((idx: any) => (idx.indexName ?? idx.name) === indexName);
-      if (found) return { id: found.id ?? found._id, name: indexName };
+    const is409 = err?.message?.includes("already exists") || err?.statusCode === 409 || err?.status === 409;
+    if (is409) {
+      const id = await findIndexByName(indexName);
+      if (id) return { id, name: indexName };
     }
     throw err;
   }
