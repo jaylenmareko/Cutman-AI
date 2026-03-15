@@ -87,11 +87,25 @@ export async function uploadVideoFile(indexId: string, filePath: string): Promis
 }
 
 export async function uploadYouTubeUrl(indexId: string, youtubeUrl: string): Promise<string> {
-  const data = await tlFetch("/tasks", {
+  const form = new FormData();
+  form.append("index_id", indexId);
+  form.append("video_url", youtubeUrl);
+
+  const res = await fetch(`${BASE_URL}/tasks`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ index_id: indexId, video_url: youtubeUrl }),
+    headers: {
+      "x-api-key": API_KEY,
+      ...form.getHeaders(),
+    },
+    body: form as any,
   });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`TwelveLabs API error ${res.status} [/tasks]: ${body}`);
+  }
+
+  const data = await res.json();
   const taskId = data._id;
   await pollTask(taskId);
   const taskInfo = await tlFetch(`/tasks/${taskId}`);
