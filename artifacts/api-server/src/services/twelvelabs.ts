@@ -20,18 +20,18 @@ async function tlFetch(path: string, options: RequestInit = {}) {
   return res.json();
 }
 
-export async function getOrCreateIndex(userId: number): Promise<string> {
+export async function getOrCreateIndex(userId: number): Promise<{ id: string; name: string }> {
   const indexName = `cutman-ai-user-${userId}`;
 
   const resp = await tlFetch("/indexes?page=1&page_limit=50");
   const existing = resp.data?.find((idx: any) => idx.name === indexName);
-  if (existing) return existing._id;
+  if (existing) return { id: existing._id, name: indexName };
 
   const created = await tlFetch("/indexes", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      name: indexName,
+      index_name: indexName,
       models: [
         {
           name: "marengo2.7",
@@ -44,7 +44,7 @@ export async function getOrCreateIndex(userId: number): Promise<string> {
       ],
     }),
   });
-  return created._id;
+  return { id: created._id, name: indexName };
 }
 
 async function pollTask(taskId: string, maxMinutes = 20): Promise<void> {
@@ -100,13 +100,14 @@ export async function uploadYouTubeUrl(indexId: string, youtubeUrl: string): Pro
   return taskInfo.video_id;
 }
 
-export async function analyzeVideo(indexId: string, videoId: string): Promise<string> {
+export async function analyzeVideo(indexId: string, indexName: string, videoId: string): Promise<string> {
   // Generate a full summary using Pegasus (v1.3: /generate endpoint)
   const generateResp = await tlFetch("/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       index_id: indexId,
+      index_name: indexName,
       video_id: videoId,
       type: "summary",
       prompt:

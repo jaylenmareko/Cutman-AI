@@ -24,7 +24,7 @@ async function runAnalysisPipeline(reportId: number, userId: number) {
   try {
     await db.update(reportsTable).set({ status: "processing" }).where(eq(reportsTable.id, reportId));
 
-    const indexId = await getOrCreateIndex(userId);
+    const { id: indexId, name: indexName } = await getOrCreateIndex(userId);
 
     let videoId: string;
     if (isYouTube) {
@@ -37,7 +37,7 @@ async function runAnalysisPipeline(reportId: number, userId: number) {
       } catch (_) {}
     }
 
-    const rawAnalysis = await analyzeVideo(indexId, videoId);
+    const rawAnalysis = await analyzeVideo(indexId, indexName, videoId);
     const reportContent = await generateScoutingReport(rawAnalysis);
 
     await db
