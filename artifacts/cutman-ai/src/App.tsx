@@ -8,6 +8,7 @@ import { Landing } from "./pages/Landing";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
 import { Dashboard } from "./pages/Dashboard";
+import { FighterProfile } from "./pages/FighterProfile";
 import { NewReport } from "./pages/NewReport";
 import { ReportProcessing } from "./pages/ReportProcessing";
 import { ReportView } from "./pages/ReportView";
@@ -21,6 +22,7 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
       <Route path="/dashboard" component={Dashboard} />
+      <Route path="/fighters/:name" component={FighterProfile} />
       <Route path="/new" component={NewReport} />
       <Route path="/reports/:id/processing" component={ReportProcessing} />
       <Route path="/reports/:id" component={ReportView} />

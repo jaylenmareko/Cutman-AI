@@ -1,14 +1,15 @@
 import { useState, useCallback } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { Navbar } from "@/components/layout/Navbar";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { useDropzone } from "react-dropzone";
-import { Upload, FileVideo, X, Loader2 } from "lucide-react";
+import { FileVideo, X, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
+import { useGetReports } from "@workspace/api-client-react";
 
 async function uploadAndAnalyze(data: { file: File; fighterName: string }) {
   const formData = new FormData();
@@ -36,11 +37,23 @@ async function uploadAndAnalyze(data: { file: File; fighterName: string }) {
 }
 
 export function NewReport() {
-  const [fighterName, setFighterName] = useState("");
+  const search = useSearch();
+  const prefill = new URLSearchParams(search).get("fighter") || "";
+  const [fighterName, setFighterName] = useState(prefill);
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { data: reports } = useGetReports();
+
+  const existingFighters = Array.from(
+    new Set((reports || []).map((r) => r.fighterName).filter(Boolean))
+  ) as string[];
+
+  const suggestions = existingFighters.filter(
+    (f) => f.toLowerCase().includes(fighterName.toLowerCase()) && f.toLowerCase() !== fighterName.toLowerCase()
+  );
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
@@ -94,15 +107,31 @@ export function NewReport() {
             <Card className="border-t-4 border-t-primary shadow-2xl">
               <CardContent className="p-6 sm:p-10">
                 <form onSubmit={handleSubmit} className="space-y-8">
-                  <div className="space-y-3">
+                  <div className="space-y-3 relative">
                     <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Fighter's Name</label>
                     <Input
                       value={fighterName}
-                      onChange={e => setFighterName(e.target.value)}
+                      onChange={e => { setFighterName(e.target.value); setShowSuggestions(true); }}
+                      onFocus={() => setShowSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                       placeholder="e.g., Canelo Alvarez"
                       className="h-14 text-lg bg-background"
                       disabled={isSubmitting}
                     />
+                    {showSuggestions && suggestions.length > 0 && (
+                      <div className="absolute z-10 w-full bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+                        {suggestions.map((name) => (
+                          <button
+                            key={name}
+                            type="button"
+                            className="w-full text-left px-4 py-3 text-lg hover:bg-secondary transition-colors font-medium"
+                            onMouseDown={() => { setFighterName(name); setShowSuggestions(false); }}
+                          >
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-3">

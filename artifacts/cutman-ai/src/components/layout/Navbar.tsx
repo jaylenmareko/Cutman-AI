@@ -39,6 +39,10 @@ export function Navbar() {
         <div className="ml-auto flex items-center space-x-4">
           {user ? (
             <>
+              <Link href="/dashboard" className="text-sm font-bold tracking-widest hover:text-primary transition-colors hidden sm:inline-block">
+                ROSTER
+              </Link>
+              <span className="text-muted-foreground hidden sm:inline-block">|</span>
               <span className="text-sm text-muted-foreground hidden sm:inline-block">
                 {user.email}
               </span>
