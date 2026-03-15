@@ -65,14 +65,26 @@ export async function getOrCreateIndex(userId: number): Promise<{ id: string; na
   }
 }
 
+async function pollUntilReady(taskId: string, maxMinutes = 20): Promise<string> {
+  const deadline = Date.now() + maxMinutes * 60 * 1000;
+  while (Date.now() < deadline) {
+    const task = await tlFetch(`/tasks/${taskId}`);
+    console.log("[TL] task status:", task.status, "taskId:", taskId);
+    if (task.status === "ready") return task.video_id ?? task.videoId;
+    if (task.status === "failed") throw new Error(`TwelveLabs indexing failed: ${task.error?.message ?? "unknown"}`);
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+  throw new Error("TwelveLabs indexing timed out after 20 minutes");
+}
+
 export async function uploadVideoFile(indexId: string, filePath: string): Promise<string> {
   const task = await client.tasks.create({
     indexId,
     videoFile: fs.createReadStream(filePath) as any,
   }) as any;
-  await task.waitForDone(5000);
-  if (task.status === "failed") throw new Error("TwelveLabs indexing failed");
-  return task.videoId;
+  const taskId = task._id ?? task.id;
+  console.log("[TL] upload task created:", taskId);
+  return pollUntilReady(taskId);
 }
 
 export async function uploadVideoUrl(indexId: string, videoUrl: string): Promise<string> {
@@ -80,9 +92,9 @@ export async function uploadVideoUrl(indexId: string, videoUrl: string): Promise
     throw new Error("YouTube URLs are not supported. Please upload a video file directly.");
   }
   const task = await client.tasks.create({ indexId, url: videoUrl } as any) as any;
-  await task.waitForDone(5000);
-  if (task.status === "failed") throw new Error("TwelveLabs indexing failed");
-  return task.videoId;
+  const taskId = task._id ?? task.id;
+  console.log("[TL] url task created:", taskId);
+  return pollUntilReady(taskId);
 }
 
 export async function analyzeVideo(indexId: string, indexName: string, videoId: string): Promise<string> {
